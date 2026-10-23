@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git 历史浏览器</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">Git <span>历史浏览器</span></div>
+    <div class="repo-input">
+        <input id="repoPath" type="text" placeholder="/path/to/repo" spellcheck="false">
+        <button id="btnOpen" class="primary">打开</button>
+    </div>
+    <div class="branch-box">
+        <label for="branchSelect">分支</label>
+        <select id="branchSelect"><option value="HEAD">HEAD</option></select>
+    </div>
+    <div class="repo-meta" id="repoMeta"></div>
+</header>
+
+<main class="layout">
+
+    <!-- 左: 分支 -->
+    <aside class="pane branches">
+        <div class="pane-title">分支 <span class="count" id="branchCount">0</span></div>
+        <ul id="branchList" class="list"></ul>
+    </aside>
+
+    <!-- 中: 提交图 -->
+    <section class="pane history">
+        <div class="pane-title">提交历史 <span class="count" id="historyCount">0</span></div>
+        <ul id="historyList" class="list commit-list"></ul>
+    </section>
+
+    <!-- 右: 详情 + diff -->
+    <section class="pane detail">
+        <div class="pane-title">提交详情</div>
+        <div id="commitDetail" class="commit-detail">
+            <div class="empty">在左侧选一个提交查看改动</div>
+        </div>
+        <div id="diffPane" class="diff-pane hidden">
+            <div class="file-tabs" id="fileTabs"></div>
+            <div id="diffContent" class="diff-content"></div>
+        </div>
+    </section>
+
+</main>
+
+<!-- 底: 工作区 + 提交 -->
+<footer class="workbar">
+    <div class="work-left">
+        <div class="pane-title inline">工作区 <span class="count" id="statusCount">0</span></div>
+        <div id="statusList" class="status-list"></div>
+    </div>
+    <div class="work-right">
+        <input id="commitMessage" type="text" placeholder="提交信息 (必填)" spellcheck="false">
+        <label class="checkbox"><input type="checkbox" id="stageAll"> 暂存全部</label>
+        <button id="btnCommit" class="primary">提交</button>
+    </div>
+</footer>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

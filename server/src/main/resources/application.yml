@@ -1,0 +1,19 @@
+server:
+  port: 7788
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: git-history-tool
+  web:
+    resources:
+      static-locations: classpath:/static/
+  mvc:
+    problemdetails:
+      enabled: false
+
+logging:
+  level:
+    com.githistory: INFO
+    org.eclipse.jgit: WARN
