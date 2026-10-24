@@ -3,6 +3,8 @@
 > **Git 历史浏览器** —— JGit 引擎 + Spring Boot 本地服务 + MCP tool
 >
 > 一套核心逻辑，两个前端：**给人看的浏览器界面**，和**给 LLM 调的 MCP 工具**。
+>
+> 🔗 https://github.com/SwordBob/git-history-tool
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -119,7 +121,17 @@ Spring Boot 默认给静态资源只加 `Last-Modified`，**不带 `Cache-Contro
 
 ## 快速开始
 
-### 1. 构建
+### 1. 拉代码
+
+```bash
+git clone ssh://git@ssh.github.com:443/SwordBob/git-history-tool.git
+cd git-history-tool
+```
+
+> 网络受限时可以走 SSH 443 端口（本机实测 `github.com` 主站 HTTPS 不通，
+> `api.github.com` / `codeload.github.com` / `ssh.github.com:443` 都通）。
+
+### 2. 构建
 
 ```bash
 mvn clean package
@@ -134,7 +146,7 @@ mvn clean package
 > </mirror>
 > ```
 
-### 2. 起 Web 界面
+### 3. 起 Web 界面
 
 ```bash
 ./start.sh
@@ -149,7 +161,7 @@ mvn clean package
 http://localhost:7788/?path=/Users/niejq/projects/git-history-tool
 ```
 
-### 3. 验证改动（改完前端必跑）
+### 4. 验证改动（改完前端必跑）
 
 ```bash
 # 静态比对: 前端访问的字段 vs 后端真的返回的字段
@@ -162,7 +174,7 @@ python3 scripts/check-frontend-contract.py
 两个脚本都返回非 0 就是有问题。`verify-ui.sh` 会检查 toast 有没有报错、
 分支/提交历史/diff 有没有真的渲染出来、有没有 `undefined` 混进界面。
 
-### 4. 当 MCP server 用
+### 5. 当 MCP server 用
 
 ```bash
 java -jar mcp/target/mcp-0.1.0-SNAPSHOT.jar
