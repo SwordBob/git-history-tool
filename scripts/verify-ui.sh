@@ -74,10 +74,25 @@ if n_commit == 0:
 if n_diff == 0:
     problems.append("diff 一行都没渲染出来")
 
-for kw in ("undefined", "NaN", "[object Object]"):
-    n = dom.count(kw)
-    if n:
-        problems.append(f"页面里混进了 {n} 处 {kw}")
+# 找 undefined: 只能看"字段值"的位置 (sha / subject / meta / 分支名 / 仓库信息 / toast)。
+# 不能全文搜 —— diff 面板里展示的文件内容本身就可能含 "undefined" 这个词
+# (比如 README 里写了 "检查有没有 undefined 混进界面"), 那不是渲染 bug。
+def undefined_in(pattern, label):
+    hits = [m.group(1).strip() for m in re.finditer(pattern, dom, re.S)]
+    bad = [h for h in hits if h in ("undefined", "null", "NaN")]
+    if bad:
+        problems.append(f"{label} 渲染成了 {bad[:3]}")
+
+undefined_in(r'<span class="sha[^"]*">(.*?)</span>', "提交 SHA")
+undefined_in(r'<span class="subject[^"]*">(.*?)</span>', "提交标题")
+undefined_in(r'<span class="meta[^"]*">(.*?)</span>', "提交时间")
+undefined_in(r'<span class="name[^"]*">(.*?)</span>', "分支名")
+undefined_in(r'<div class="repo-meta" id="repoMeta">(.*?)</div>', "仓库信息")
+undefined_in(r'<div id="toast"[^>]*>(.*?)</div>', "提示消息")
+
+# DOM 属性级异常 (元素本身渲染成 undefined/null)
+for m in re.finditer(r'<(span|div|li)[^>]*>\s*(undefined|null|NaN)\s*</\1>', dom):
+    problems.append(f"有元素直接渲染成了 {m.group(2)}")
 
 if problems:
     print("\n❌ UI 验证失败:")
