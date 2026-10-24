@@ -59,9 +59,40 @@
 | `RevWalk.getRevCount()` | 已移除（遍历计数） |
 | `RevCommit.getTree()` 对父提交返回 null | 父提交必须显式 `walk.parseCommit(id)` |
 | `ObjectLoader` 不是 AutoCloseable | 不能用 try-with-resources |
+| `org.eclipse.jgit.lib.FileId` | **整个类已移除**（见下方"工作区 diff"） |
+| `AbbreviatedObjectId` | **不再继承 `ObjectId`**（变成独立 final class），要用 `.toObjectId()` 转回 |
+| `RawTextComparator.compare(a, b)` | 已移除，改用 `DiffAlgorithm.getAlgorithm(MYERS).diff(cmp, a, b)` |
 
 另外：`FileRepositoryBuilder.setWorkTree(dir).findGitDir()` 之后 **`getGitDir()` 仍然是 null**，
 但 `build()` 会自己补全 —— 别在 build 之前判断 null。
+
+### 坑：工作区 diff 不能用 `DiffFormatter.format()`
+
+JGit 7.8 删掉了 `FileId` 类。工作区文件在 `DiffEntry` 里只剩一个**伪 SHA**
+（`AbbreviatedObjectId`，object database 里根本没这个对象）。
+`DiffFormatter` 分辨不出"这侧是工作区文件"，会照常去 object database 找那个 blob，
+于是抛：
+
+```
+org.eclipse.jgit.errors.MissingObjectException: Missing blob 8ff12c64...
+```
+
+**解法**（`DiffService.workingFileDiff()` 就是这么写的）：自己读两侧内容 ——
+旧侧从 object database（`entry.getOldId().toObjectId()`），新侧直接读工作区文件 ——
+再用 `DiffAlgorithm` 算编辑列表，自己拼 unified diff 文本。
+
+> 这坑只在**工作区不干净**时才暴露。工作区干净时 `scan()` 返回空列表，
+> 根本走不到 `format()` —— 所以接口测试全绿，真实使用才炸。
+
+### 坑：后端返回 JSON，前端不能写 `obj.field()`
+
+后端是 Java record，访问器是 `obj.field()`；但**序列化到前端之后就是普通 JSON 属性**，
+前端必须写 `obj.field`。写成 `obj.field()` 在浏览器里直接 TypeError，
+界面只会显示一句没头没尾的"加载失败"。
+
+本项目踩过这个坑（`row.commit()` → `row.commit`），所以加了两道防线：
+`scripts/check-frontend-contract.py` 静态比对字段名，`scripts/verify-ui.sh` 用真的
+Chrome 跑一遍页面看渲染结果。**只测 REST 接口返回 200 是发现不了这类问题的。**
 
 ---
 
@@ -91,7 +122,26 @@ mvn clean package
 
 输入仓库路径 → 打开 → 左边选分支、中间点提交、右边看 diff、底部提交。
 
-### 3. 当 MCP server 用
+也可以直接带参数打开（方便脚本 / headless 浏览器）：
+
+```
+http://localhost:7788/?path=/Users/niejq/projects/git-history-tool
+```
+
+### 3. 验证改动（改完前端必跑）
+
+```bash
+# 静态比对: 前端访问的字段 vs 后端真的返回的字段
+python3 scripts/check-frontend-contract.py
+
+# 真机渲染: headless Chrome 打开页面, 抓渲染后的 DOM 检查
+./scripts/verify-ui.sh /Users/niejq/projects/git-history-tool
+```
+
+两个脚本都返回非 0 就是有问题。`verify-ui.sh` 会检查 toast 有没有报错、
+分支/提交历史/diff 有没有真的渲染出来、有没有 `undefined` 混进界面。
+
+### 4. 当 MCP server 用
 
 ```bash
 java -jar mcp/target/mcp-0.1.0-SNAPSHOT.jar
@@ -187,6 +237,9 @@ git-history-tool/
 │   └── resources/static/{index.html, app.js, style.css}
 ├── mcp/                               # stdio MCP server
 │   └── com/githistory/mcp/McpServerMain.java
+├── scripts/
+│   ├── check-frontend-contract.py     # 前端 <-> API 字段契约检查
+│   └── verify-ui.sh                   # headless Chrome 真机渲染验证
 └── start.sh
 ```
 

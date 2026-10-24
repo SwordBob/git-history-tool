@@ -4,9 +4,15 @@ import com.githistory.core.model.DiffLine;
 import com.githistory.core.model.FileDiff;
 import com.githistory.core.model.FileEntry;
 import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.diff.DiffAlgorithm;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
+import org.eclipse.jgit.diff.Edit;
+import org.eclipse.jgit.diff.EditList;
+import org.eclipse.jgit.diff.RawText;
+import org.eclipse.jgit.diff.RawTextComparator;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.FileMode;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectLoader;
 import org.eclipse.jgit.lib.ObjectReader;
@@ -20,8 +26,10 @@ import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.eclipse.jgit.treewalk.TreeWalk;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -117,10 +125,120 @@ public class DiffService {
                 entries = df.scan(new EmptyTreeIterator(), new FileTreeIterator(repo));
             }
             for (DiffEntry entry : entries) {
-                result.add(toFileDiff(repo, entry));
+                result.add(workingFileDiff(repo, entry));
             }
         }
         return result;
+    }
+
+    /**
+     * 工作区单个文件的改动。
+     *
+     * <p>⚠️ 这里不能复用 {@code DiffFormatter.format(DiffEntry)}:
+     * JGit 7.8 已经删掉了 {@code FileId} 类, 工作区文件在 DiffEntry 里只剩一个
+     * 伪 SHA (AbbreviatedObjectId), DiffFormatter 分辨不出"这是工作区文件",
+     * 会跑去 object database 里找那个根本不存在的 blob, 直接抛
+     * {@code MissingObjectException: Missing blob xxxx}。
+     *
+     * <p>所以这里自己读两侧内容 (旧侧从 object database, 新侧从工作区文件),
+     * 再用 {@link RawTextComparator} 算编辑列表, 自己拼 unified diff 文本。
+     */
+    private FileDiff workingFileDiff(Repository repo, DiffEntry entry) throws IOException {
+        byte[] oldBytes = readOldSide(repo, entry);
+        byte[] newBytes = readNewSide(repo, entry);
+
+        if (isBinary(oldBytes) || isBinary(newBytes)) {
+            return new FileDiff(entry.getNewPath(), entry.getOldPath(),
+                    changeType(entry.getChangeType()), 0, 0, true, List.of());
+        }
+
+        RawText a = new RawText(oldBytes);
+        RawText b = new RawText(newBytes);
+        EditList edits = DiffAlgorithm.getAlgorithm(DiffAlgorithm.SupportedAlgorithm.MYERS)
+                .diff(RawTextComparator.DEFAULT, a, b);
+        String patch = buildUnifiedDiff(entry, a, b, edits);
+        return parsePatch(entry, patch);
+    }
+
+    /** 旧侧内容: HEAD 里的真 blob; 文件是新增的 (oldMode == MISSING) 时返回空 */
+    private byte[] readOldSide(Repository repo, DiffEntry entry) throws IOException {
+        if (entry.getOldMode() == FileMode.MISSING) {
+            return new byte[0];
+        }
+        ObjectId id = entry.getOldId().toObjectId();
+        return repo.open(id, Constants.OBJ_BLOB).getBytes();
+    }
+
+    /** 新侧内容: 直接读工作区文件; 文件被删除的 (newMode == MISSING) 时返回空 */
+    private byte[] readNewSide(Repository repo, DiffEntry entry) throws IOException {
+        if (entry.getNewMode() == FileMode.MISSING) {
+            return new byte[0];
+        }
+        File file = new File(repo.getWorkTree(), entry.getNewPath());
+        if (!file.isFile()) {
+            return new byte[0];
+        }
+        return Files.readAllBytes(file.toPath());
+    }
+
+    /** 把 EditList 拼成 unified diff 文本 (git 风格, 3 行上下文) */
+    private String buildUnifiedDiff(DiffEntry entry, RawText a, RawText b, EditList edits) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("--- a/").append(entry.getOldPath()).append('\n');
+        sb.append("+++ b/").append(entry.getNewPath()).append('\n');
+
+        final int ctx = 3;
+        int i = 0;
+        while (i < edits.size()) {
+            Edit first = edits.get(i);
+            int hunkBeginA = Math.max(0, first.getBeginA() - ctx);
+            int hunkEndA = Math.min(a.size(), first.getEndA() + ctx);
+            int hunkBeginB = Math.max(0, first.getBeginB() - ctx);
+            int hunkEndB = Math.min(b.size(), first.getEndB() + ctx);
+
+            // 相邻的 edit 如果上下文能连上, 合并进同一个 hunk
+            int j = i + 1;
+            while (j < edits.size()) {
+                Edit e = edits.get(j);
+                int nextBeginA = Math.max(0, e.getBeginA() - ctx);
+                if (nextBeginA > hunkEndA) {
+                    break;
+                }
+                hunkEndA = Math.max(hunkEndA, Math.min(a.size(), e.getEndA() + ctx));
+                hunkEndB = Math.max(hunkEndB, Math.min(b.size(), e.getEndB() + ctx));
+                j++;
+            }
+
+            sb.append("@@ -").append(hunkBeginA + 1).append(',').append(hunkEndA - hunkBeginA)
+                    .append(" +").append(hunkBeginB + 1).append(',').append(hunkEndB - hunkBeginB)
+                    .append(" @@\n");
+
+            int ai = hunkBeginA;
+            int bi = hunkBeginB;
+            for (int k = i; k < j; k++) {
+                Edit e = edits.get(k);
+                while (ai < e.getBeginA()) {
+                    sb.append(' ').append(a.getString(ai)).append('\n');
+                    ai++;
+                    bi++;
+                }
+                while (ai < e.getEndA()) {
+                    sb.append('-').append(a.getString(ai)).append('\n');
+                    ai++;
+                }
+                while (bi < e.getEndB()) {
+                    sb.append('+').append(b.getString(bi)).append('\n');
+                    bi++;
+                }
+            }
+            while (ai < hunkEndA) {
+                sb.append(' ').append(a.getString(ai)).append('\n');
+                ai++;
+                bi++;
+            }
+            i = j;
+        }
+        return sb.toString();
     }
 
     /** 某个 commit 下某个文件的内容 */
@@ -276,6 +394,17 @@ public class DiffService {
         byte[] head = loader.getBytes(8000);
         for (byte b : head) {
             if (b == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 二进制判定 (直接看字节, 不走 ObjectLoader) */
+    private boolean isBinary(byte[] data) {
+        int limit = Math.min(data.length, 8000);
+        for (int i = 0; i < limit; i++) {
+            if (data[i] == 0) {
                 return true;
             }
         }

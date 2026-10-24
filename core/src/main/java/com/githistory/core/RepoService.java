@@ -13,6 +13,7 @@ import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -41,9 +42,18 @@ public class RepoService {
         ObjectId head = repo.resolve(Constants.HEAD);
         List<String> remotes = new ArrayList<>();
         repo.getConfig().getSubsections("remote").forEach(remotes::add);
+
+        // JGit 给出的 workTree 字面路径可能带 "./" 后缀 (如 ".../repo/."),
+        // 直接 getName() 会拿到 "." —— 先规范化再取名字
+        File dir = repo.isBare() ? repo.getDirectory() : repo.getWorkTree();
+        if (dir == null) {
+            dir = repo.getDirectory();
+        }
+        File canonical = dir.getCanonicalFile();
+
         return new RepoInfo(
-                repo.getWorkTree().getAbsolutePath(),
-                repo.getDirectory().getParentFile().getName(),
+                canonical.getAbsolutePath(),
+                canonical.getName(),
                 holder.currentBranch(repo),
                 head == null ? null : head.getName(),
                 repo.isBare(),

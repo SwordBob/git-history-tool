@@ -8,6 +8,8 @@ import com.githistory.core.model.GraphRow;
 import com.githistory.core.model.StatusEntry;
 import com.githistory.core.model.CommitRequest;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.List;
 
 /**
@@ -115,6 +117,43 @@ public class EngineSmokeTest {
         String rendered = core.renderDiff(changed);
         System.out.println("  " + rendered.lines().limit(8).reduce("", (a, b) -> a + "\n  " + b));
 
+        System.out.println("\n========== 11. 工作区未提交改动 diff ==========");
+        List<FileDiff> working = core.workingTreeDiff(path);
+        if (working.isEmpty()) {
+            System.out.println("  (工作区干净)");
+        } else {
+            for (FileDiff d : working) {
+                System.out.printf("  %s %-50s +%d -%d%s%n", d.changeType(), d.path(),
+                        d.additions(), d.deletions(), d.binary() ? "  [二进制]" : "");
+            }
+        }
+
+        // 这一步必须自己造一个脏文件 —— 之前工作区一直是干净的,
+        // /api/working-diff 的 MissingObjectException 一直没被触发过。
+        System.out.println("\n========== 12. 工作区 diff 冒烟 (临时文件) ==========");
+        File tmp = new File(path, ".mavis-smoke-test-tmp.txt");
+        boolean ok;
+        try {
+            Files.writeString(tmp.toPath(), "line1\nline2\nline3\n");
+            List<FileDiff> w2 = core.workingTreeDiff(path);
+            FileDiff hit = w2.stream()
+                    .filter(d -> d.path().endsWith(".mavis-smoke-test-tmp.txt"))
+                    .findFirst().orElse(null);
+            ok = hit != null;
+            if (ok) {
+                System.out.printf("  ✅ 抓到新文件 %s  +%d -%d%n",
+                        hit.path(), hit.additions(), hit.deletions());
+            } else {
+                System.out.println("  ❌ 没抓到新建的临时文件 —— 工作区 diff 有问题!");
+            }
+        } finally {
+            Files.deleteIfExists(tmp.toPath());
+        }
+
+        if (!ok) {
+            System.out.println("\n❌ 引擎有步骤未通过");
+            System.exit(1);
+        }
         System.out.println("\n✅ 引擎全部步骤跑通");
     }
 }
