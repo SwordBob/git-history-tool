@@ -9,6 +9,14 @@ spring:
   web:
     resources:
       static-locations: classpath:/static/
+      # ⚠️ 必须关掉缓存: 不带 Cache-Control 头时浏览器会启用"启发式缓存"
+      # (按文件年龄的 10% 当过期时间), 改了前端也不重新请求, 用户一直在用旧版 js。
+      # no-cache 不是"不缓存", 是"每次必须回服务器验证" —— 配合 Last-Modified/ETag
+      # 服务器返回 304 或新内容, 用户不用手动强刷就能拿到最新版。
+      cache:
+        cachecontrol:
+          no-cache: true
+          must-revalidate: true
   mvc:
     problemdetails:
       enabled: false

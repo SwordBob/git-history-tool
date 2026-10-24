@@ -94,6 +94,27 @@ org.eclipse.jgit.errors.MissingObjectException: Missing blob 8ff12c64...
 `scripts/check-frontend-contract.py` 静态比对字段名，`scripts/verify-ui.sh` 用真的
 Chrome 跑一遍页面看渲染结果。**只测 REST 接口返回 200 是发现不了这类问题的。**
 
+### 坑：静态资源被浏览器缓存，你改的代码根本没生效
+
+Spring Boot 默认给静态资源只加 `Last-Modified`，**不带 `Cache-Control`**。
+这时浏览器会启用**启发式缓存** —— 拿"文件年龄的 10%"当过期时间，
+在你看来"刚改完"的文件，浏览器觉得还没过期，**直接用缓存，连请求都不发**。
+
+后果非常迷惑：改了前端 → 页面没变化 → 以为代码没改对。
+本项目被这个坑坑过一次：用户看到的还是旧版 `app.js`，
+**旧版打开仓库不加载历史（看着正常），一选分支才崩**。
+
+三层防御（都在本项目里了）：
+
+| 层 | 做法 |
+|---|---|
+| 响应头 | `application.yml` 里 `spring.web.resources.cache.cachecontrol.no-cache=true` + `must-revalidate=true` —— 每次必须回服务器验证，配合 `Last-Modified` 返回 304 或新内容 |
+| URL | `index.html` 用动态 `<script>` 加载 `app.js`，URL 带唯一时间戳，绕开所有缓存层 |
+| 自证 | `/api/version` 返回构建时间，界面左上角显示 `build 20261024-082532` —— 一眼看出自己跑的是不是最新那版 |
+
+> 改完前端还是不对？先看左上角的 build 标识。**对不上就是浏览器在用缓存**，
+> 硬刷新一次（Cmd+Shift+R）即可，之后不会再犯。
+
 ---
 
 ## 快速开始

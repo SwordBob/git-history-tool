@@ -9,7 +9,7 @@
 <body>
 
 <header class="topbar">
-    <div class="brand">Git <span>历史浏览器</span></div>
+    <div class="brand">Git <span>历史浏览器</span><span class="build-tag" id="buildTag" title="构建时间戳"></span></div>
     <div class="repo-input">
         <input id="repoPath" type="text" placeholder="/path/to/repo" spellcheck="false">
         <button id="btnOpen" class="primary">打开</button>
@@ -64,6 +64,18 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/app.js"></script>
+<!-- app.js 用动态 URL 加载, 每次带唯一时间戳:
+     彻底绕开浏览器缓存。之前"改了前端但用户还在跑旧版 js"就是这个坑 ——
+     静态资源没带 Cache-Control 头时, 浏览器会启用启发式缓存 (按文件年龄的 10%
+     当过期时间), 改了也不重新请求。服务端也加了 no-cache 头, 双保险。 -->
+<script>
+    window.__BUILD__ = 'r' + Date.now();
+    (function () {
+        var s = document.createElement('script');
+        s.src = '/app.js?t=' + window.__BUILD__;
+        s.async = false;
+        document.body.appendChild(s);
+    })();
+</script>
 </body>
 </html>

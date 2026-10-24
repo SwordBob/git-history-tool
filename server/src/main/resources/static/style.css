@@ -275,3 +275,17 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2c323d; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4150; }
+
+/* 构建标识: 显示在左上角, 用来确认"我用的到底是不是最新那一版" */
+.build-tag {
+    margin-left: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    font-size: 10px;
+    font-family: var(--mono);
+    letter-spacing: .3px;
+    vertical-align: middle;
+}

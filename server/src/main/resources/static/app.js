@@ -12,6 +12,13 @@
 
 const $ = (id) => document.getElementById(id);
 
+// 前端资源标识: 动态加载时 URL 上带的唯一时间戳, 只用于诊断。
+const BUILD = (() => {
+    const src = document.currentScript && document.currentScript.src;
+    const m = src && src.match(/[?&]t=([\w.-]+)/);
+    return window.__BUILD__ || (m ? m[1] : 'dev');
+})();
+
 const state = {
     repoPath: '',
     branches: [],
@@ -80,11 +87,11 @@ function branchLabel(b) {
 // 全局错误捕获: 出错时把真实原因显示在界面上,
 // 不要再只甩一句"加载失败"让人猜。
 window.addEventListener('error', (e) => {
-    toast('页面错误: ' + (e.message || e.error || '未知错误'), 'error');
+    toast('页面错误[' + BUILD + ']: ' + (e.message || e.error || '未知错误'), 'error');
 });
 window.addEventListener('unhandledrejection', (e) => {
     const reason = e.reason && e.reason.message ? e.reason.message : e.reason;
-    toast('异步错误: ' + reason, 'error');
+    toast('异步错误[' + BUILD + ']: ' + reason, 'error');
 });
 
 async function openRepo() {
@@ -103,7 +110,7 @@ async function openRepo() {
         await loadHistory($('branchSelect').value || 'HEAD');
         toast('已打开 ' + info.name, 'success');
     } catch (e) {
-        toast('打开失败: ' + e.message, 'error');
+        toast('打开失败[' + BUILD + ']: ' + e.message, 'error');
     }
 }
 
@@ -185,7 +192,7 @@ async function loadHistory(ref) {
             $('diffPane').classList.add('hidden');
         }
     } catch (e) {
-        toast('加载历史失败: ' + e.message, 'error');
+        toast('加载历史失败[' + BUILD + ']: ' + e.message, 'error');
     }
 }
 
@@ -231,7 +238,7 @@ async function selectCommit(commitId, node) {
 
         renderFileTabs(changed);
     } catch (e) {
-        toast('加载提交详情失败: ' + e.message, 'error');
+        toast('加载提交详情失败[' + BUILD + ']: ' + e.message, 'error');
     }
 }
 
@@ -311,7 +318,7 @@ async function loadStatus() {
             list.appendChild(chip);
         });
     } catch (e) {
-        toast('加载状态失败: ' + e.message, 'error');
+        toast('加载状态失败[' + BUILD + ']: ' + e.message, 'error');
     }
 }
 
@@ -341,11 +348,20 @@ async function doCommit() {
         state.selectedFiles.clear();
         await Promise.all([loadHistory($('branchSelect').value), loadStatus()]);
     } catch (e) {
-        toast('提交失败: ' + e.message, 'error');
+        toast('提交失败[' + BUILD + ']: ' + e.message, 'error');
     }
 }
 
 // ------------------------------------------------------------------ 启动
+
+// 显示服务端构建时间 —— 用户能一眼看出自己跑的是不是最新那一版
+fetch('/api/version')
+    .then((r) => r.json())
+    .then((v) => {
+        const tag = $('buildTag');
+        if (tag) tag.textContent = 'build ' + v.build;
+    })
+    .catch(() => {});
 
 $('btnOpen').onclick = openRepo;
 $('btnCommit').onclick = doCommit;
